@@ -3,9 +3,8 @@
 The binary release of [nbfx](https://github.com/gluonhq/nbfx), `nbfx-<version>-bin.zip`, runs on
 any of its four platforms with a JDK 25+ the user supplies. This repository wraps that zip with a
 JDK into the installer each platform expects, using
-[Apache NetBeans nbpackage](https://github.com/apache/netbeans-nbpackage), the tool Apache NetBeans
-and the Codelerity installers are packaged with. The zip itself is not changed: nbpackage unpacks
-it, adds the runtime and a launcher that starts `bin/netbeans` (or `bin\netbeans64.exe`) with
+[Apache NetBeans nbpackage](https://github.com/apache/netbeans-nbpackage). nbpackage unpacks the
+zip, adds the runtime and a launcher that starts `bin/netbeans` (or `bin\netbeans64.exe`) with
 `--jdkhome` pointing at the bundled JDK, and hands the result to the platform's packaging tool.
 
 The packages live apart from the nbfx sources so that the signing material and the tokens the
@@ -38,13 +37,6 @@ downloads it by hand. To move to another JDK, change the pin and the `package.ru
 of the platform's configuration; nbpackage reads the architecture from the file name, so keep the
 vendor's name.
 
-A `.tar.gz` runtime is repacked with `tar` after the checksum, under the same name, before nbpackage
-sees it. The jdk.java.net Linux tarball has no directory entries, and nbpackage (at the pinned
-commit) creates the parent directory of regular file entries only, so the first symlink of an
-all-symlink directory, `legal/java.compiler/ADDITIONAL_LICENSE_INFO`, fails to extract with
-`NoSuchFileException`; `tar` writes the directory entries the extraction needs. The macOS tarball
-has them already. A local Linux build needs the same repack (below).
-
 ## The workflow
 
 [`packages.yml`](.github/workflows/packages.yml) builds every package on GitHub runners:
@@ -74,64 +66,3 @@ as the payload, which another workflow can send with a token that may write to t
   This is the step of [RELEASING.md](https://github.com/gluonhq/nbfx/blob/main/RELEASING.md) that
   attaches the packages to a published release candidate; promoting the candidate copies them to
   the final release, the same bytes, so a final release is not packaged again.
-
-### Secrets
-
-Signing happens when the repository secrets are set; without them every package is unsigned (a
-fork). macOS uses the same secrets as `gluonhq/scenebuilder`:
-
-| Secret | Use |
-|---|---|
-| `CERTIFICATES_FILE_BASE64`, `CERTIFICATES_PASSWORD` | the `.p12` with the Developer ID Application and Installer certificates, imported into the runner's keychain |
-| `MACSIGN_USER` | the name in the identities: `Developer ID Application: <MACSIGN_USER>` signs the binaries and the bundle, `Developer ID Installer: <MACSIGN_USER>` the `.pkg` |
-| `NOTARIZATION_USERNAME`, `NOTARIZATION_PASSWORD`, `NOTARIZATION_TEAMID` | the Apple ID, app-specific password and team for `notarytool`; the ticket is stapled to the `.pkg` |
-| `NBFX_RELEASE_TOKEN` | a fine-grained personal access token with *Contents: read and write* on `gluonhq/nbfx`, used to upload the packages to its release (`publish=release`) and to read a release that is still a draft; the workflow's own token reads published releases without it |
-
-nbpackage signs every native binary (the JavaFX `.dylib`s, the JDK's, the ones inside jars that
-carry some) with the hardened runtime and its sandbox entitlements, then the bundle, then
-`pkgbuild` signs the installer. The Windows installer and the Linux packages are not signed.
-
-## A local build
-
-```sh
-# nbpackage: the 1.0 release, or `mvnw package` of a checkout (target/nbpackage-*-bin.zip)
-curl -LO https://archive.apache.org/dist/netbeans/netbeans-nbpackage/1.0/nbpackage-1.0-bin.zip
-unzip nbpackage-1.0-bin.zip
-
-# the runtime of the platform, where its configuration expects it (runtimes.properties)
-mkdir -p macos-aarch64/downloads
-curl -o macos-aarch64/downloads/openjdk-27.0.1.0.3_macos-aarch64_bin.tar.gz <url>
-shasum -a 256 macos-aarch64/downloads/*          # compare with the pin
-# Linux only: repack the tarball so it carries directory entries (see "The bundled runtime")
-# mkdir x && tar xzf <file> -C x && tar czf <file> -C x . && rm -r x
-
-# the zip of a release, or the one `ant release-bin` makes in an nbfx checkout
-gh release download 0.1.0 --repo gluonhq/nbfx --pattern 'nbfx-*-bin.zip' --dir build
-mkdir -p dist
-nbpackage-1.0/bin/nbpackage --verbose \
-    --config macos-aarch64/macos-pkg.properties \
-    --input build/nbfx-0.1.0-bin.zip --output dist -Pversion=0.1.0
-```
-
-`-P<key>=<value>` overrides any `package.` key, e.g. `-Pmacos.codesign-id="Developer ID
-Application: ..." -Pmacos.pkgbuild-id="Developer ID Installer: ..."` to sign, or
-`-Pinnosetup.tool=<path to ISCC.exe>`. On Linux without FUSE, run the AppImage build with
-`APPIMAGE_EXTRACT_AND_RUN=1`. `--image-only` stops after the unpacked, laid-out image, to inspect
-what the package will contain; a full run leaves that image directory next to the package (the
-workflow deletes it before uploading).
-
-## Open points
-
-- **Icons.** Every configuration leaves the icon keys empty, so the packages show nbpackage's
-  default, the Apache NetBeans logo, on purpose for now: an nbfx icon derived from it needs the
-  NetBeans project's view on the trademark first. When one exists, it goes in `icons/` (an
-  `.icns`, an `.ico`, a 48x48 `.png` and an `.svg`) and into the `package.*.icon` keys.
-- **The Linux `StartupWMClass`** (`nbfx`) is unverified: check `xprop WM_CLASS` on the running
-  window; a mismatch only affects dock grouping.
-- **The Debian/RPM maintainer address** is a placeholder.
-- **Windows signing** (Authenticode) is not set up.
-- **The tarball repack** goes away once nbpackage creates parent directories for link entries too
-  (a two-line fix in `ArchiveUtils`, to be proposed upstream) and `NBPACKAGE_REF` moves past it.
-- **Triggering from nbfx.** Publishing a release candidate in `gluonhq/nbfx` could send the
-  `nbfx-release` dispatch to this repository; that needs a token able to write here, stored in
-  `gluonhq/nbfx`. Until then the workflow is run by hand after the candidate is published.

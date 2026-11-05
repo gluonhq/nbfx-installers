@@ -15,11 +15,16 @@ only reads, and the packages are neither signed with the release key nor part of
 
 | Platform | Package | Configuration | Tooling |
 |---|---|---|---|
-| macOS aarch64 | `nbfx-<version>-arm64.pkg` (an `.app` bundle in a signed, notarized installer) | `macos-aarch64/macos-pkg.properties` | `swift`, `codesign`, `pkgbuild` (Xcode command line tools) |
-| Windows x64 | `nbfx-<version>.exe` (Inno Setup) | `windows-x64/windows-innosetup.properties` | [Inno Setup 6](https://jrsoftware.org/isinfo.php) |
-| Linux x64 | `nbfx_<version>-1_amd64.deb` | `linux-x64/linux-deb.properties` | `dpkg`, `dpkg-deb`, `fakeroot` |
-| Linux x64 | `nbfx-<version>-0.x86_64.rpm` | `linux-x64/linux-rpm.properties` | `rpm`, `rpmbuild` |
-| Linux x64 | `nbfx-<version>-x86_64.AppImage` | `linux-x64/linux-appimage.properties` | [appimagetool](https://github.com/AppImage/appimagetool) |
+| macOS aarch64 | `nbfx-<tag>-macos-aarch64.pkg` (an `.app` bundle in a signed, notarized installer) | `macos-aarch64/macos-pkg.properties` | `swift`, `codesign`, `pkgbuild` (Xcode command line tools) |
+| Windows x64 | `nbfx-<tag>-windows-x64.exe` (Inno Setup) | `windows-x64/windows-innosetup.properties` | [Inno Setup 6](https://jrsoftware.org/isinfo.php) |
+| Linux x64 | `nbfx-<tag>-linux-x64.deb` | `linux-x64/linux-deb.properties` | `dpkg`, `dpkg-deb`, `fakeroot` |
+| Linux x64 | `nbfx-<tag>-linux-x64.rpm` | `linux-x64/linux-rpm.properties` | `rpm`, `rpmbuild` |
+| Linux x64 | `nbfx-<tag>-linux-x64.AppImage` | `linux-x64/linux-appimage.properties` | [appimagetool](https://github.com/AppImage/appimagetool) |
+
+The packagers name their output by version and architecture alone (`nbfx-0.1.0-arm64.pkg`,
+`nbfx_0.1.0-1_amd64.deb`, `nbfx-0.1.0.exe`); the workflow renames each package after the nbfx
+release tag and the platform so that a release page tells them apart. The metadata inside
+(version, architecture) is the packager's own.
 
 There is no package for macOS x64: jdk.java.net has no JDK 27 for it (the port is deprecated
 since JDK 27 and Oracle no longer builds it), so that platform keeps using the zip with a JDK of
@@ -49,8 +54,9 @@ vendor's name.
    `apache/netbeans-nbpackage` (`NBPACKAGE_REF`), once, on Linux: it is pure Java, so one build
    serves every platform.
 3. **One job per (platform, package type)** downloads the pinned runtime, runs nbpackage with the
-   platform's configuration (`-Pversion=<version>` from the zip's name) and uploads the package as
-   a workflow artifact named `nbfx-<tag>-<platform>-<type>`.
+   platform's configuration (`-Pversion=<version>` from the zip's name), renames the package to
+   `nbfx-<tag>-<platform>.<ext>` and uploads it as a workflow artifact named
+   `nbfx-<tag>-<platform>-<type>`.
 4. **Collect** merges them into one artifact, `nbfx-<tag>-packages`, with a `.sha256` list, and
    publishes where asked.
 

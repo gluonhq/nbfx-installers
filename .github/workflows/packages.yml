@@ -244,6 +244,7 @@ jobs:
       - name: nbpackage
         shell: bash
         env:
+          PLATFORM: ${{ matrix.platform }}
           TYPE: ${{ matrix.type }}
           # appimagetool runs without FUSE on the runner
           APPIMAGE_EXTRACT_AND_RUN: '1'
@@ -257,6 +258,12 @@ jobs:
           java -p "$NBPACKAGE_MODS" -m org.apache.netbeans.nbpackage/org.apache.netbeans.nbpackage.Main "${args[@]}"
           # nbpackage leaves the unpacked image directory next to the package; only the package ships
           for image in dist/*/; do rm -rf "$image"; done
+          # the packagers name the file by version and architecture only (nbfx-0.1.0-arm64.pkg,
+          # nbfx_0.1.0-1_amd64.deb, nbfx-0.1.0.exe...): rename it after the tag and the platform,
+          # like the artifact, so that a release page tells the packages apart
+          files=(dist/*)
+          [ "${#files[@]}" -eq 1 ] || { echo "::error::expected one package in dist, found: ${files[*]}"; exit 1; }
+          mv "${files[0]}" "dist/nbfx-$LABEL-$PLATFORM.${files[0]##*.}"
           ls -l dist
 
       - name: Notarize and staple

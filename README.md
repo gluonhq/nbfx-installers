@@ -7,10 +7,11 @@ JDK into the installer each platform expects, using
 zip, adds the runtime and a launcher that starts `bin/netbeans` (or `bin\netbeans64.exe`) with
 `--jdkhome` pointing at the bundled JDK, and hands the result to the platform's packaging tool.
 
-The packages live apart from the nbfx sources so that the signing material and the tokens the
-packaging needs are secrets of this repository alone. They are a convenience: the release of nbfx
-is the one of `gluonhq/nbfx` ([RELEASING.md](https://github.com/gluonhq/nbfx/blob/main/RELEASING.md)),
-and the packages are neither signed with the release key nor part of its review.
+The packages live apart from the nbfx sources so that the signing material the packaging needs
+is a secret of this repository alone, and they are released here, under the nbfx tag they
+package. They are a convenience: the release of nbfx is the one of `gluonhq/nbfx`
+([RELEASING.md](https://github.com/gluonhq/nbfx/blob/main/RELEASING.md)), which this repository
+only reads, and the packages are neither signed with the release key nor part of its review.
 
 | Platform | Package | Configuration | Tooling |
 |---|---|---|---|
@@ -42,8 +43,8 @@ vendor's name.
 [`packages.yml`](.github/workflows/packages.yml) builds every package on GitHub runners:
 
 1. **The zip**: `nbfx-<version>-bin.zip` of the `gluonhq/nbfx` release named by `tag` is
-   downloaded and checked against its `.sha512`. A published release or pre-release is enough;
-   a draft needs `NBFX_RELEASE_TOKEN` (below).
+   downloaded with the workflow's own token and checked against its `.sha512`. The release must
+   be published (a pre-release is fine); a draft is not visible.
 2. **nbpackage** is built from source (`mvnw package`) at a pinned commit of
    `apache/netbeans-nbpackage` (`NBPACKAGE_REF`), once, on Linux: it is pure Java, so one build
    serves every platform.
@@ -62,7 +63,7 @@ as the payload, which another workflow can send with a token that may write to t
 - `nowhere`: the workflow artifacts only (the default);
 - `snapshot`: the rolling `snapshot` pre-release of **this** repository, recreated on the packaged
   commit, for trying the packages and the signing without touching an nbfx release;
-- `release`: uploaded to the `gluonhq/nbfx` release of `tag`, replacing files of the same name.
-  This is the step of [RELEASING.md](https://github.com/gluonhq/nbfx/blob/main/RELEASING.md) that
-  attaches the packages to a published release candidate; promoting the candidate copies them to
-  the final release, the same bytes, so a final release is not packaged again.
+- `release`: the release of **this** repository named `tag`, created on the packaged commit (a
+  pre-release when the tag has a pre-release part, as in `0.1.0-rc1`); when it exists already,
+  its files of the same name are replaced. Nothing is uploaded to `gluonhq/nbfx`, so no token for
+  that repository is needed.

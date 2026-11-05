@@ -3,16 +3,17 @@
 # repository (README.md).
 #
 #   workflow_dispatch     `tag` names the gluonhq/nbfx release whose zip is packaged; `publish`
-#                         puts the packages on that release (needs NBFX_RELEASE_TOKEN), or on the
-#                         rolling "snapshot" pre-release of this repository; the workflow
-#                         artifacts hold them in any case.
+#                         puts the packages on a release of this repository named after that tag,
+#                         or on its rolling "snapshot" pre-release; the workflow artifacts hold
+#                         them in any case.
 #   repository_dispatch   the same, driven by another workflow: event type `nbfx-release`,
 #                         client_payload {"tag": "...", "publish": "..."}.
 #
 # One job obtains the zip, one builds nbpackage from source, then a matrix of (platform, package
 # type) jobs package, and the last job collects every package into one artifact and publishes.
 # Signing and notarization (macOS) happen when the secrets are set; otherwise the packages are
-# unsigned, which is what a fork gets.
+# unsigned, which is what a fork gets. Nothing is written to gluonhq/nbfx: the default token
+# reads its published releases, and the packages are released here.
 name: Packages
 
 on:
@@ -52,10 +53,6 @@ jobs:
     name: The binary zip
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      # a fine-grained token with contents read/write on gluonhq/nbfx: needed to publish to its
-      # release, and to read a release that is still a draft; the default token reads published ones
-      NBFX_RELEASE_TOKEN: ${{ secrets.NBFX_RELEASE_TOKEN }}
     outputs:
       version: ${{ steps.zip.outputs.version }}
       label: ${{ steps.zip.outputs.label }}
@@ -67,17 +64,15 @@ jobs:
           fi
           case "$PUBLISH" in nowhere|snapshot|release) ;; *)
             echo "::error::publish must be nowhere, snapshot or release, not '$PUBLISH'"; exit 1;; esac
-          if [ "$PUBLISH" = release ] && [ -z "$NBFX_RELEASE_TOKEN" ]; then
-            echo "::error::publishing to the $NBFX_REPOSITORY release needs the NBFX_RELEASE_TOKEN secret"; exit 1
-          fi
 
-      # the zip the release manager uploaded, checked against its .sha512 when present
+      # the zip the release manager uploaded, checked against its .sha512 when present; the default
+      # token reads a published release or pre-release of the public repository, not a draft
       - name: Download nbfx-<version>-bin.zip of ${{ env.TAG }}
         run: |
           mkdir -p input
-          GH_TOKEN="${NBFX_RELEASE_TOKEN:-$GH_TOKEN}" gh release download "$TAG" --repo "$NBFX_REPOSITORY" \
+          gh release download "$TAG" --repo "$NBFX_REPOSITORY" \
             --pattern 'nbfx-*-bin.zip' --pattern 'nbfx-*-bin.zip.sha512' --dir input \
-            || { echo "::error::$NBFX_REPOSITORY release $TAG has no nbfx-<version>-bin.zip (or is a draft and NBFX_RELEASE_TOKEN is not set)"; exit 1; }
+            || { echo "::error::$NBFX_REPOSITORY release $TAG has no nbfx-<version>-bin.zip (or is a draft)"; exit 1; }
           cd input
           for sum in *.sha512; do [ -f "$sum" ] && sha512sum -c "$sum"; done
           ls -l
@@ -310,11 +305,21 @@ jobs:
           name: nbfx-${{ env.LABEL }}-packages
           path: dist/*
 
-      - name: Upload to the ${{ env.NBFX_REPOSITORY }} release ${{ env.TAG }}
+      # the release of this repository named after the nbfx tag: created on the packaged commit
+      # (a pre-release when the tag has a pre-release part, as in 0.1.0-rc1), or, when it exists,
+      # its files of the same name replaced
+      - name: Publish the release ${{ env.TAG }} of this repository
         if: env.PUBLISH == 'release'
-        env:
-          GH_TOKEN: ${{ secrets.NBFX_RELEASE_TOKEN }}
-        run: gh release upload "$TAG" --repo "$NBFX_REPOSITORY" --clobber dist/*
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" --clobber dist/*
+          else
+            case "$TAG" in *-*) prerelease=--prerelease ;; *) prerelease= ;; esac
+            gh release create "$TAG" $prerelease --target "$GITHUB_SHA" \
+              --title "nbfx $TAG packages" \
+              --notes "Packages of nbfx $VERSION ($NBFX_REPOSITORY $TAG) built from $GITHUB_SHA by the Packages workflow (run $GITHUB_RUN_ID)." \
+              dist/*
+          fi
 
       # the rolling snapshot of this repository: one pre-release, recreated on the packaged commit
       - name: Update the snapshot pre-release
